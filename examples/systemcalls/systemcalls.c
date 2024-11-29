@@ -56,9 +56,6 @@ bool do_exec(int count, ...)
     }
     command[count] = NULL;
 
-    if (*command[0] != '/')
-        return false;
-
 /*
  * TODO:
  *   Execute a system command by calling fork, execv(),
@@ -75,10 +72,7 @@ bool do_exec(int count, ...)
         return false;
     } else if (forkRet == 0) {
         /* we are in the child */
-        if (*command[2] != '/') {
-            exit(-1);
-        }
-        if (execv(command[0], &command[1]) == -1) {
+        if (execv(command[0], command) == -1) {
             perror("execv failed in the child");
             exit(-1);
         }
@@ -118,8 +112,6 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    if (*command[0] != '/')
-        return false;
 
 /*
  * TODO:
@@ -137,11 +129,8 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         return false;
     } else if (forkRet == 0) {
         /* we are in the child */
-        if (*command[2] != '/') {
-            exit(-1);
-        }
-        freopen(outputfile, "a+", stdout);
-        if (execv(command[0], &command[1]) == -1) {
+        freopen(outputfile, "w", stdout);
+        if (execv(command[0], command) == -1) {
             perror("execv failed in the child");
             exit(-1);
         }
