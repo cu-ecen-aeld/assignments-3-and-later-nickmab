@@ -1,5 +1,10 @@
 #include "systemcalls.h"
 
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <sys/wait.h>
+
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -16,8 +21,13 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    int ret = system(cmd);
 
-    return true;
+    if (ret == 0)
+        return true;
+
+    perror("failed to run 'system' command");
+    return false;
 }
 
 /**
@@ -45,9 +55,6 @@ bool do_exec(int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
 /*
  * TODO:
@@ -59,9 +66,34 @@ bool do_exec(int count, ...)
  *
 */
 
+    int forkRet = fork();
+    if (forkRet == -1) {
+        perror("fork failed!");
+        return false;
+    } else if (forkRet == 0) {
+        /* we are in the child */
+        if (execv(command[0], command) == -1) {
+            perror("execv failed in the child");
+            exit(-1);
+        }
+    }
+
     va_end(args);
 
-    return true;
+    /* we are in the parent */
+    int wstatus = 0;
+    int waitRet = waitpid(forkRet, &wstatus, 0);
+    if (waitRet == -1) {
+        perror("failed to wait for child pid");
+        return false;
+    } else if (waitRet != forkRet) {
+        fprintf(stderr, "Expected waitRet to be %d but got %d instead??", forkRet, waitRet);
+        return false;
+    }
+
+    int childExitStatus = WEXITSTATUS(wstatus);
+    fprintf(stdout, "return was %d", childExitStatus);
+    return childExitStatus == 0;
 }
 
 /**
@@ -80,20 +112,44 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
-
 
 /*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
+ * TODO:
+ *   Execute a system command by calling fork, execv(),
+ *   and wait instead of system (see LSP page 161).
+ *   Use the command[0] as the full path to the command to execute
+ *   (first argument to execv), and use the remaining arguments
+ *   as second argument to the execv() command.
  *
 */
 
+    int forkRet = fork();
+    if (forkRet == -1) {
+        perror("fork failed!");
+        return false;
+    } else if (forkRet == 0) {
+        /* we are in the child */
+        freopen(outputfile, "w", stdout);
+        if (execv(command[0], command) == -1) {
+            perror("execv failed in the child");
+            exit(-1);
+        }
+    }
+
     va_end(args);
 
-    return true;
+    /* we are in the parent */
+    int wstatus = 0;
+    int waitRet = waitpid(forkRet, &wstatus, 0);
+    if (waitRet == -1) {
+        perror("failed to wait for child pid");
+        return false;
+    } else if (waitRet != forkRet) {
+        fprintf(stderr, "Expected waitRet to be %d but got %d instead??", forkRet, waitRet);
+        return false;
+    }
+
+    int childExitStatus = WEXITSTATUS(wstatus);
+    fprintf(stdout, "return was %d", childExitStatus);
+    return childExitStatus == 0;
 }

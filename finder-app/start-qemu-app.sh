@@ -7,8 +7,8 @@ set -e
 OUTDIR=$1
 
 if [ -z "${OUTDIR}" ]; then
-    OUTDIR=/tmp/aeld
-    echo "No outdir specified, using ${OUTDIR}"
+    echo "Usage: $0 <outdir>"
+    exit 1
 fi
 
 KERNEL_IMAGE=${OUTDIR}/Image
