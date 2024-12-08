@@ -5,23 +5,18 @@
 set -e
 set -u
 
-OUTDIR=/tmp/aeld
+OUTDIR=$HOME/Development/coursera-embedded-linux
 KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
 KERNEL_VERSION=v5.15.163
 BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
-TOOLCHAIN=aarch64-none-linux-gnu
-CROSS_COMPILE=${TOOLCHAIN}-
-TOOLCHAIN_DIR=$(readlink -f $(which "${CROSS_COMPILE}gcc") | sed -E "s@(.+)/bin/${CROSS_COMPILE}gcc@\1/${TOOLCHAIN}@")
-FINDER_APP_DIR=$HOME/repo/coursera-buildroot/finder-app
+CROSS_COMPILE=
 
-if [ ! -d $TOOLCHAIN_DIR ]
-then
-    echo "Unable to find TOOLCHAIN_DIR: ${TOOLCHAIN_DIR}"
-    exit 1
-else
-    echo "Using toolchain at: ${TOOLCHAIN_DIR}"
+if [[ `arch` != aarch64 ]]; then
+    TOOLCHAIN=aarch64-none-linux-gnu
+    CROSS_COMPILE=${TOOLCHAIN}-
+    TOOLCHAIN_DIR=$(realpath -mL $(which "${CROSS_COMPILE}gcc")/../..)
 fi
 
 if [ $# -lt 1 ]
@@ -87,7 +82,17 @@ echo "Library dependencies:"
 ${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "Shared library"
 
+
+exit 1
+
 # TODO: Make this more automated!
+if [ ! -d $TOOLCHAIN_DIR ]
+then
+    echo "Unable to find TOOLCHAIN_DIR: ${TOOLCHAIN_DIR}"
+    exit 1
+else
+    echo "Using toolchain at: ${TOOLCHAIN_DIR}"
+fi
 cp "${TOOLCHAIN_DIR}/libc/lib/ld-linux-aarch64.so.1" "${OUTDIR}/rootfs/lib/"
 cp "${TOOLCHAIN_DIR}/libc/lib64/libc.so.6" "${OUTDIR}/rootfs/lib64/"
 cp "${TOOLCHAIN_DIR}/libc/lib64/libm.so.6" "${OUTDIR}/rootfs/lib64/"
