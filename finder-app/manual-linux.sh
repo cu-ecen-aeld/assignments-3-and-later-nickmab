@@ -91,7 +91,7 @@ else
     exit 1
 fi
 
-$($READ_CMD) | grep "Shared library" | awk -F'[][]' '{print $2}' | while read -r SHARED_LIB; do
+${READ_CMD} | grep "Shared library" | awk -F'[][]' '{print $2}' | while read -r SHARED_LIB; do
     SHARED_LIB_PATH=$(${GCC_COMMAND} --print-file-name="${SHARED_LIB}")
 
     if [[ -f "${SHARED_LIB_PATH}" ]]; then
