@@ -5,24 +5,19 @@
 set -e
 set -u
 
-OUTDIR=/tmp/aeld
+OUTDIR=$HOME/Development/coursera-embedded-linux
 KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
 KERNEL_VERSION=v5.15.163
 BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
-TOOLCHAIN=aarch64-none-linux-gnu
-CROSS_COMPILE=${TOOLCHAIN}-
-TOOLCHAIN_DIR=$(readlink -f $(which "${CROSS_COMPILE}gcc") | sed -E "s@(.+)/bin/${CROSS_COMPILE}gcc@\1/${TOOLCHAIN}@")
-FINDER_APP_DIR=$HOME/repo/coursera-buildroot/finder-app
 
-if [ ! -d $TOOLCHAIN_DIR ]
-then
-    echo "Unable to find TOOLCHAIN_DIR: ${TOOLCHAIN_DIR}"
-    exit 1
-else
-    echo "Using toolchain at: ${TOOLCHAIN_DIR}"
+CROSS_COMPILE=
+if [[ `arch` != aarch64 ]]; then
+    CROSS_COMPILE=aarch64-none-linux-gnu-
 fi
+
+GCC_COMMAND=${CROSS_COMPILE}gcc
 
 if [ $# -lt 1 ]
 then
@@ -47,7 +42,7 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
 
     ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make mrproper
     ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make defconfig
-    ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE KBUILD_BUILD_TIMESTAMP='' make CC="ccache ${CROSS_COMPILE}gcc" -j`nproc`
+    ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE KBUILD_BUILD_TIMESTAMP='' make CC="ccache ${GCC_COMMAND}" -j`nproc`
     ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make modules
     ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make dtbs
 fi
@@ -83,15 +78,30 @@ fi
 ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make
 ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make CONFIG_PREFIX="${OUTDIR}/rootfs" install
 
-echo "Library dependencies:"
-${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "program interpreter"
-${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "Shared library"
+echo "Copying busybox dependencies to rootfs..."
+READ_CMD="${CROSS_COMPILE}readelf -a ${OUTDIR}/rootfs/bin/busybox"
 
-# TODO: Make this more automated!
-cp "${TOOLCHAIN_DIR}/libc/lib/ld-linux-aarch64.so.1" "${OUTDIR}/rootfs/lib/"
-cp "${TOOLCHAIN_DIR}/libc/lib64/libc.so.6" "${OUTDIR}/rootfs/lib64/"
-cp "${TOOLCHAIN_DIR}/libc/lib64/libm.so.6" "${OUTDIR}/rootfs/lib64/"
-cp "${TOOLCHAIN_DIR}/libc/lib64/libresolv.so.2" "${OUTDIR}/rootfs/lib64/"
+PROG_INTERPRETER=$(${READ_CMD} | grep "program interpreter" | awk -F': ' '{print $2}' | tr -d '[]')
+PROG_INTERPRETER_PATH=$(${GCC_COMMAND} --print-file-name="${PROG_INTERPRETER}")
+if [[ -f "${PROG_INTERPRETER_PATH}" ]]; then
+    echo "copying: ${PROG_INTERPRETER_PATH}"
+    cp "${PROG_INTERPRETER_PATH}" "${OUTDIR}/rootfs/lib/"
+else
+    echo "Program interpreter ${PROG_INTERPRETER} not found!"
+    exit 1
+fi
+
+$($READ_CMD) | grep "Shared library" | awk -F'[][]' '{print $2}' | while read -r SHARED_LIB; do
+    SHARED_LIB_PATH=$(${GCC_COMMAND} --print-file-name="${SHARED_LIB}")
+
+    if [[ -f "${SHARED_LIB_PATH}" ]]; then
+        echo "copying: ${SHARED_LIB_PATH}"
+        cp "${SHARED_LIB_PATH}" "${OUTDIR}/rootfs/lib64/"
+    else
+        echo "Library ${SHARED_LIB} not found!"
+        exit 1
+    fi
+done
 
 sudo mknod -m 666 "${OUTDIR}/rootfs/dev/null" c 1 3
 sudo mknod -m 666 "${OUTDIR}/rootfs/dev/console" c 5 1
