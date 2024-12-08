@@ -47,7 +47,7 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
 
     ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make mrproper
     ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make defconfig
-    ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make -j3
+    ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE KBUILD_BUILD_TIMESTAMP='' make CC="ccache ${CROSS_COMPILE}gcc" -j`nproc`
     ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make modules
     ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE make dtbs
 fi
