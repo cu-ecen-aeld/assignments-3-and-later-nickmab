@@ -35,4 +35,4 @@ qemu-system-aarch64 \
         -kernel ${KERNEL_IMAGE} \
         -chardev stdio,id=char0,mux=on,logfile=${OUTDIR}/serial.log,signal=off \
         -serial chardev:char0 -mon chardev=char0 \
-        -append "rdinit=/home/autorun-qemu.sh console=ttyAMA0" -initrd ${INITRD_IMAGE}
+        -append "rdinit=/home/autorun-qemu.sh console=ttyAMA0 LD_LIBRARY_PATH=/lib64" -initrd ${INITRD_IMAGE}
