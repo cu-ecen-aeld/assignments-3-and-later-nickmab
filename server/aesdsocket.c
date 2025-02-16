@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include <arpa/inet.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
@@ -30,6 +31,22 @@ void handle_signal(int sig_num) {
         default:
             break;
     }
+}
+
+void delete_outfile(void) {
+    /* but only try to delete it if it exists! */
+    FILE *f = fopen(_OUTFILE, "r");
+    if (f != NULL) {
+        fclose(f);
+        unlink(_OUTFILE);
+    }
+}
+
+void exit_gracefully(void) {
+    syslog(LOG_INFO, "Exiting gracefully after catching signal %d, deleting file %s",
+        caught_shutdown_signal, _OUTFILE);
+    delete_outfile();
+    exit(0);
 }
 
 void init_signal_handler(void) {
@@ -101,6 +118,69 @@ void append_to_file(const char *data) {
     fclose(file);
 }
 
+void poll_until_readable(int fd) {
+    fd_set read_fds;
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000;
+
+    while (1) {
+        if (caught_shutdown_signal != 0) {
+            exit_gracefully();
+        }
+
+        FD_ZERO(&read_fds);
+        FD_SET(fd, &read_fds);
+        int select_ret = select(fd + 1, &read_fds, NULL, NULL, &tv);
+
+        if (select_ret == -1) {
+            if (errno == EINTR) {
+                /* we have been interrupted by a system call */
+                continue;
+            }
+
+            int errnoCopy = errno;
+            syslog(LOG_ERR, "Call to 'select' failed. socket fd=%d. Errno: %d Error: %s",
+                fd, errnoCopy, strerror(errnoCopy));
+            
+            exit(-1);
+        } else if (select_ret != 0) {
+            return;
+        }
+    }
+}
+
+void poll_until_writable(int fd) {
+    fd_set write_fds;    
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000;
+
+    while (1) {
+        if (caught_shutdown_signal != 0) {
+            exit_gracefully();
+        }
+
+        FD_ZERO(&write_fds);
+        FD_SET(fd, &write_fds);
+        int select_ret = select(fd + 1, NULL, &write_fds, NULL, &tv);
+
+        if (select_ret == -1) {
+            if (errno == EINTR) {
+                /* we have been interrupted by a system call */
+                continue;
+            }
+
+            int errnoCopy = errno;
+            syslog(LOG_ERR, "Call to 'select' failed. socket fd=%d. Errno: %d Error: %s",
+                fd, errnoCopy, strerror(errnoCopy));
+            exit(-1);
+        } else if (select_ret != 0) {
+            return;
+        }
+    }
+}
+
 void read_and_append_complete_packet(int peer_fd) {
     const size_t buf_size = 1024;
     char buf[buf_size];
@@ -108,6 +188,8 @@ void read_and_append_complete_packet(int peer_fd) {
 
     char finished = 0;
     while (!finished) {
+        poll_until_readable(peer_fd);
+
         memset(buf, '\0', buf_size);
         ssize_t read_bytes = recv(peer_fd, buf, buf_size - 1, 0);
 
@@ -162,6 +244,7 @@ void spew_file_to_client(int peer_fd) {
         }
 
         total_bytes += bytes_read;
+        poll_until_writable(peer_fd);
         if (bytes_read > 0) {
             send(peer_fd, buf, bytes_read, 0);
         }
@@ -191,15 +274,14 @@ void serve_until_stopped(int socket_fd) {
         socklen_t addrlen = sizeof(struct sockaddr);
         memset(&peer_addr, 0, addrlen);
 
-        if (caught_shutdown_signal != 0) {
-            return;
-        }
-
         syslog(LOG_INFO, "Waiting to accept next connection...");
-        const int peer_fd = accept4(socket_fd, (struct sockaddr *)&peer_addr, &addrlen, 0);
+
+        poll_until_readable(socket_fd);
+        const int peer_fd = accept(socket_fd, (struct sockaddr *)&peer_addr, &addrlen);
+        
         if (peer_fd == -1) {
             int errnoCopy = errno;
-            syslog(LOG_ERR, "Crashing because accept4 failed. Errno: %d Error: %s.",
+            syslog(LOG_ERR, "Crashing because accept failed. Errno: %d Error: %s.",
                 errnoCopy, strerror(errnoCopy));
             exit(-1);
         }
@@ -220,9 +302,5 @@ int main(int /*argc*/, char **/*argv*/) {
     const int fd = make_and_bind_socket(_PORT);
     syslog(LOG_INFO, "Bound to port %s, socket fd=%d. Now listening forever...\n", _PORT, fd);
     serve_until_stopped(fd);
-    syslog(LOG_INFO, "Exiting gracefully after catching signal %d, deleting file %s",
-        caught_shutdown_signal, _OUTFILE);
-    close(fd);
-    unlink(_OUTFILE);
     return 0;
 }
